@@ -3,7 +3,7 @@
 # Small script to automatically send an email with the GardenCam reboots
 #
 ##
-mailreceiver=[YourEmailAddress]@gmail.com
+mailreceiver=YourEmailAddress@gmail.com
 today=$(date)
 my_pi="GardenCam has rebooted!"
 message="Your Pi has rebooted at $today"

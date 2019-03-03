@@ -42,7 +42,7 @@ network={
 }
 ```
 5. Eject the microSD card, load it into the Raspberry Pi, and plug it in.
-6. Find the Raspberry Pi's IP address using the command `sudo nmap -sP 192.168.1.1/24`
+6. Find the Raspberry Pi's IP address using the command `sudo nmap -sP 192.168.1.0/24`
 7. Once found, log into RPi: ssh pi@[IP-ADDRESS-HERE]//(the default password is raspberry). 
 
 #### Configure your Raspberry Pi Zero
@@ -55,11 +55,11 @@ network={
 	- Set locale
 	- Set timezone
 	- Set keyboard country
-2. Now update, upgrade and reboot the Pi: `sudo apt-get update -y`, `sudo apt-get upgrade -y`, `sudo reboot`
+2. Now update, upgrade and reboot the Pi: `sudo apt-get update -y`, `sudo apt-get upgrade -y`, `sudo reboot`.
 
-At this point I would recommend setting up a static IP for your GardenCam. You can do this through DHCP within the Pi, but I found it easier to just create a static IP through my router (running AsusWRT Merlin).
+At this point I would recommend setting up a static IP for your GardenCam. You can do this through `/etc/network/interfaces` within the Pi, but I found it easier to just create a static IP through my router (running AsusWRT Merlin).
 
-#### Saving energy
+#### Saving Energy
 
 In order to save energy it is possible to turn off the Pi Zero's onboard ACT LED, Bluetooth, and HDMI port. Turning off the LED will also ensure that it does not disturb your plants night cycle. 
 
@@ -67,7 +67,7 @@ In order to save energy it is possible to turn off the Pi Zero's onboard ACT LED
 
 Raspberry Pi Zero's values are opposite those on most Raspberry Pis, and it only has one LED, led0 (labeled 'ACT' on the board). The LED defaults to on (brightness 0), and turns off (brightness 1) to indicate disk activity.
 
-Add the following lines to your Pi's `/boot/config.txt` file and reboot:
+Add the following lines to `/boot/config.txt`:
 ```
 # Disable ACT LED
 dtparam=act_led_trigger=none
@@ -78,149 +78,178 @@ gpu_mem=128
 
 ##### Disable Bluetooth
 
-Edit the file `/etc/rc.local` and add the following lines above exit 0:
+Edit `/etc/rc.local` and add the following lines above exit 0:
 ```
 # Disable Bluetooth
 dtoverlay=pi3-disable-bt
 ```
 
-##### Disable HDMI at boot
+##### Disable HDMI at Boot
 
-Edit /etc/rc.local and add the following lines above exit 0:
+Edit `/etc/rc.local` and add the following lines above exit 0:
 ```
 # Disable HDMI
 /usr/bin/tvservice -o
 ```
 
-add hdmi_blanking setting to your /boot/config.txt I found the follwing settings here:
-hdmi_blanking=0: HDMI Output will be blank when DPMS is triggered
-hdmi_blanking=1: HDMI Output will be disabled when DPMS is triggered
-hdmi_blanking=2: HDMI Output will be disabled on boot and can be enabled using the above listed commands.
-But the official documentation does not mention hdmi_blanking=2 only the following 2 settings:
-0   HDMI Output will blank instead of being disabled
-1   HDMI Output will be disabled rather than just blanking
-I think hdmi_blanking=1 should do what you want.
-
-
-### Mount Network Drive
-
-https://www.codedonut.com/raspberry-pi/mount-network-share-raspberry-pi/
-
-At boot
-https://thepihut.com/blogs/raspberry-pi-tutorials/26871940-connecting-to-network-storage-at-boot
-
-### Set up Time-Lapse script
-
-chmod +x camera.sh
-
-# Setup crontab
-Edit your crontab by by running `crontab -e` and adding the following to the end of the file:
+Add this hdmi_blanking setting to `/boot/config.txt`:
 ```
-# run flask web server @ 10.0.0.1:5000
-@reboot python /home/pi/raspberry-pi-timelapse-camera/raspberry-pi-server/app.py
-
-# take a picture every 1 min
-* * * * * /home/pi/raspberry-pi-timelapse-camera/raspberry-pi-code/app.py
+hdmi_blanking=1
 ```
 
-### Set up Automatic upload script
+#### Mount Network Drive
 
-### Set up Watchdog to deal with crashes
+Create a folder in your Raspberry Pi's home directory to mount the network drive in.
+```
+cd ~
+sudo mkdir NAS
+cd NAS
+sudo mkdir share
+cd ..
+```
 
-https://quantixed.org/2018/12/04/experiment-zero-using-a-raspberry-pi-zero-camera/
+We will enable Raspbian's ability to 'lock' files when they are being accessed by someone in order to protect them from corruption. You do this by enabling the 'rpcbind' service, which is not on by default:
+```
+sudo update-rc.d rpcbind enable
+```
 
-set up a watchdog to monitor for crashes and then reboot the Pi if/when it happens. 
+Now we will mount the network drive to the newly created share directory. Make sure that you have the login creditionals that you use to access your NAS or server. If you're using an external harddrive attached via USB to your router the creditionals will be your normal gateway login username and password. Run the following commands to mount the drive:
+```
+sudo mount -t cifs -o username=YourUsername,password=YourPassword //SERVERNAME/DIRECTORY NAS/share
+```
+Make sure to change all of the variables: YourUsername, YourPassword, SERVERNAME, and DIRECTORY as appropriate. Your username and password will be the creditionals you use to log in to your NAS or networked computer. You can replace "SERVERNAME" with the name or IP address of your NAS or networked computer.
 
-Install watchdog
+Check that this worked by browsing the mount point on your Pi:
+```
+cd /home/pi/NAS/share
+ls
+```
+If you see whatever files exist in the shared directory on your NAS or server then it worked. 
 
+##### Make Raspberry Pi Automount Network Drive on Boot
+
+Run the following command to edit the /etc/fstab file:
+```
+sudo nano /etc/fstab
+```
+Navigate to the bottom of the file and add this (changing the variables as appropriate):
+```
+//SERVERNAME/Directory /home/pi/NAS/share cifs username=YourUsername,password=YourPassword 0 0
+```
+As usual with nano, press Ctrl+X to exit, responding 'Y' to whether you want to save, and press 'Return', and your share should now automount at boot.
+
+### Set up Camera and Upload Scripts
+
+Create directory to store images
+```
+cd ~
+sudo mkdir /home/pi/gardencam
+cd garden cam
+sudo mkdir /images
+```
+Download the camera script and make it executable. 
+```
+sudo wget -O /home/pi/camera.sh https://raw.githubusercontent.com/xthursdayx/GardenCam/raw/master/camera.sh
+
+sudo chmod +x /home/pi/gardencam/camera.sh
+```
+
+Edit the the `raspistill` settings in the script to reflect your desired photo qualities: `sudo nano camera.sh`. For more information check out the [Camera Module documentation](https://www.raspberrypi.org/documentation/raspbian/applications/camera.md) on raspberrypi.org. By default the script uses the settings `raspistill -md 4 -q 75 -hf -vf -o /home/pi/gardencam/images/$COMPDATE.jpg` which means that raspistill captures in resolution mode (-md) 4 or 1640x1232, 75% quality (-q), flips the image both horizontally (-hf) and vertically (-vf), and outputs (-o) to the listed file location. 
+
+Create logs directory and camera log.
+```
+cd ~
+sudo mkdir /home/pi/logs
+sudo touch /home/pi/logs/camera.log
+```
+
+#### Set up crontab to run camera.sh
+
+Edit the Pi's crontab by running `sudo crontab -e` and add the following to the end of the file:
+```
+# take a picture every 10 mins during light cycle (13:00-7:00)
+*/10 13-23,0-6 * * * sh /home/pi/gardencam/camera.sh 2>&1
+```
+
+#### Set up automatic upload script
+
+Download the upload script and make it executable. 
+```
+sudo wget -O /home/pi/upload.sh https://raw.githubusercontent.com/xthursdayx/GardenCam/raw/master/upload.sh
+
+sudo chmod +x /home/pi/upload.sh
+```
+Create upload log.
+```
+sudo touch /home/pi/logs/upload.log
+```
+
+Edit crontab `sudo crontab -e` and add these lines to the end of the file:
+```
+# Upload all new images to network drive daily at end of light cycle
+5 7 * * * sh /home/pi/upload.sh
+```
+
+### Set up Watchdog to Deal with Crashes
+
+If you have a longer-term time-lapse project in mind, you need to defend against a crash that will stop the Pi from taking pictures. Otherwise, the Pi could go offline and you wouldn’t know until you tried to log in and check on it or noticed that there were no new images.
+
+Watchdog can monitor for crashes and then reboot the Pi if/when they happen. The bcm2708_wdog seems to work for other Raspberry Pis, but the bcm2835_wdt module is the one that works with Raspberry Pi Zero.
+
+First, install watchdog:
 ````
 sudo modprobe bcm2835_wdt
 sudo nano /etc/modules
 ````
+Add the line “bcm2835_wdt” and save the file. (You can also run the command `echo "bcm2708_wdog" | sudo tee -a /etc/modules` to add this line without opening the modules file.)
 
-Add the line “bcm2835_wdt” and save the file
-
-Next I installed the watchdog daemon
-
-Install the watchdog daemon
-
+Next, install the watchdog daemon:
 ````
 sudo apt-get install watchdog chkconfig
-chkconfig watchdog on
 sudo update-rc.d watchdog defaults
-sudo /etc/init.d/watchdog start
 ````
-Configure the watchdog daemon
+Configure the watchdog daemon:
 ```
 sudo nano /etc/watchdog.conf
 ```
-Uncomment two lines from this file:
+Uncomment the following two lines from this file:
+
 1. watchdog-device = /dev/watchdog
-2. the line that had max-load-1 in it
-Save the watchdog.conf file.
+2. the line that has `max-load-1` in it.
+Save watchdog.conf and exit.
 
-
-And enable/start it with:           
-sudo systemctl enable watchdog
-sudo systemctl start watchdog.service
-
-sudo service watchdog start
-
-### Set up Auto-mailer to report reboot
-
-Mail notification
-Login to the Raspberry Pi using SSH
-We will first create the bash file to send the mail:
-$  cd /home/pi/bin
-$ sudo nano mailIP
-Add this in the mailIP file:
+Enable and start the watchdog with:           
 ```
-#!/bin/sh
-mailreciever=YOURMAIL
-today=$(date)
-my_ip=`ifconfig  | grep 'inet addr:'| grep -v '127.0.0.1' | cut -d: -f2 | awk '{print $1}'`
-my_pi="Blue RaspberryPi has rebooted! "
-message="Your Pi has rebooted at $today. Current IP address = $my_ip"
-echo $message > message.txt
-mutt -s "${my_pi}" ${mailreciever} < message.txt
+chkconfig watchdog on
+sudo /etc/init.d/watchdog start
 ```
-save the file and make it executable using:
-sudo chmod 0755 mailIP
 
-Test the mailIP script first to see if you get a mail!
+### Set up Auto-mailer to Report Crashes and Camera Failures
 
-Now we want to make sure that the script gets run when the Raspberry Pi boots. 
-
-Edit /etc/rc.local:
+First download and edit the mailer script:
 ```
-$ sudo nano /etc/rc.local
+sudo wget -O /home/pi/mail_report.sh https://raw.githubusercontent.com/xthursdayx/GardenCam/raw/master/mail_report.sh
 ```
-Add this above the exit 0 line:
+Edit the script (`sudo nano mail_report.sh`) and change the variable `YourEmailAddress@gmail.com` to reflect your desired email address. 
 
-$ sudo /home/pi/bin/mailIP & 
+Save the file and make it executable using: `sudo chmod +x /home/pi/mail_report.sh`
 
-Make sure the rc.local can be executed:
-
-sudo chmod 0755 /etc/rc.local
-
-I had to put a copy of .muttrc in the /root folder for this to work:
-$ sudo bash
-# cp /home/pi/.muttrc /root
-
-Now we are going to install sendmail and  mutt so we can send the mails
+Now install sendmail and mutt so the Raspberry Pi can send emails:
+```
 sudo apt-get install sendmail-bin
 sudo apt-get install sensible-mda
- apt-get install mutt
+apt-get install mutt
+```
+Setup mutt using a file called .muttrc. You can download a template for gmail accounts here:
+```
+cd ~
+sudo wget -O https://raw.githubusercontent.com/xthursdayx/GardenCam/raw/master/muttrc-gmail.txt
+sudo mv muttrc-gmail.txt .muttrc
+```
 
-We need to setup mutt. This is done using a file called .muttrc
-You can download an example from here
-# cd /home/pi
-# wget http://cache.gawker.com/assets/images/lifehacker/2010/06/muttrc-gmail.txt
-# mv muttrc-gmail.txt .muttrc
-# nano .muttrc
+Edit the first six uncommented lines of the .muttrc file to match your gmail account info: `sudo nano .muttrc`
 
 ```
-create the file .muttrc with the following content: (vi .muttrc or nano .muttrc)
 # basic .muttrc for use with Gmail
 # Change the following six lines to match your Gmail account details
 set imap_user = "username@gmail.com"
@@ -230,95 +259,58 @@ set smtp_pass = ""
 set from = "username@gmail.com"
 set realname = "Firstname Lastname"
 #
-# # Change the following line to a different editor you prefer.
-set editor = 'vim + -c "set textwidth=72" -c "set wrap"'
-# Basic config
-set folder = "imaps://imap.gmail.com:993"
-set spoolfile = "+INBOX"
-set imap_check_subscribed=yes
-set hostname = gmail.com
-set mail_check = 120
-set timeout = 300
-set imap_keepalive = 300
-set postponed = "+[GMail]/Drafts"
-set header_cache=~/.mutt/cache/headers
-set message_cachedir=~/.mutt/cache/bodies
-set certificate_file=~/.mutt/certificates
-set move = no
-set include
-set sort = 'threads'
-set sort_aux = 'reverse-last-date-received'
-set auto_tag = yes
-set pager_index_lines = 10
-ignore "Authentication-Results:"
-ignore "DomainKey-Signature:"
-ignore "DKIM-Signature:"
-hdr_order Date From To Cc
-alternative_order text/plain text/html *
-auto_view text/html
-bind editor <Tab> complete-query
-bind editor ^T complete
-bind editor <space> noop
-# # Gmail-style keyboard shortcuts
-macro index,pager am "<enter-command>unset trash\n <delete-message>" "Gmail archive message" # different from Gmail, but wanted to keep "y" to show folders.
-macro index,pager d "<enter-command>set trash=\"imaps://imap.googlemail.com/[GMail]/Bin\"\n <delete-message>" "Gmail delete message"
-macro index,pager gi "<change-folder>=INBOX<enter>" "Go to inbox"
-macro index,pager ga "<change-folder>=[Gmail]/All Mail<enter>" "Go to all mail"
-macro index,pager gs "<change-folder>=[Gmail]/Starred<enter>" "Go to starred messages"
-macro index,pager gd "<change-folder>=[Gmail]/Drafts<enter>" "Go to drafts"
-macro index,pager gl "<change-folder>?" "Go to 'Label'" # will take you to a list of all your Labels (similar to viewing folders).
 ```
 
-edit the first lines to setup your gmail account info
+Place a copy of .muttrc in the /root folder:
+```
+sudo cp /home/pi/.muttrc /root
+```
 
-Create a mail script in /home/pi:
-cd /home/pi/
-sudo nano mailIP
-Paste the following (repalce YOURMAIL with full email address of where you want the email sent i.e. fred@hotmail.com):
- #!/bin/sh
- mailreceiver=YOURMAIL
- today=$(date)
- #my_ip=`ifconfig | grep 'inet addr:'| grep -v '127.0.0.1' | cut -d: -f2 | awk '{print $1}'`
- my_ip=`wget -q -O - checkip.dyndns.org|sed -e 's/.*Current IP Address: //' -e 's/<.*$//'`
- my_pi="Domoticz RaspberryPi has rebooted! "
- message="Your Pi has rebooted at $today. Current IP address = $my_ip"
- echo $message > message.txt
- mutt -s "${my_pi}" ${mailreceiver} < message.txt && rm message.txt
-The commented line fetches the internal ip, example fetches external ip.
-Make sure the mailIP can be executed:
-sudo chmod +x mailIP
-Test the script by running it: 
-./mailIP
-Setup rc.local to send the mail at each reboot: Edit /etc/rc.local:
-sudo nano /etc/rc.local
-Add this above the exit 0 line:
-sudo /home/pi/mailIP & 
-Make sure the rc.local can be executed:
-sudo chmod 0755 /etc/rc.local
-sudo bash
-cp /home/pi/.muttrc /root
+Edit cron to send the mail at each reboot `sudo crontab -e` and add the following lines:
+```
+# Send mail 60 seconds after reboot to allow time for wifi to connect
+@reboot sleep 60 && sh /home/pi/mail_report.sh
+```
 
+Run `sudo ./mail_report.sh` to test the script first to see if you get a mail.
 
-Edit the first six lines of the file to match your gmail account info.
+## Generating Time-Lapse Videos - JPEG > MP4
 
-Next we will create a daily cronjob to mail you the report
-Upload the [mail_report] file to /var/www/smareport
-Make sure you edit the mailreceiver and rename the file to remove the .txt!
-Upload the [message.txt] file to /var/www/smareport (this one you don’t need to rename!)
-# chmod 0754 mail_report
-# crontab -e
-Add this:
-0 21 * * * /var/www/smareport/mail_report >/dev/null 2>&1
-Ctrl+X
-Yes
-Enter
-Done!
+I use ffmpeg to generate time-lapse videos from the sequence of images collected by the GardenCam Pi. It is possible to do this on the Pi itself, but the server that hosts the uploaded images has much more processing power than the Raspberry Pi Zero, so I prefer to run ffmpeg there. I have written a script that prunes any images taken during the dark cycle (there should be none, but just in case), and then compiles the remaining images into an .mp4 timelapse video. The scrip will compile the video from all of the jpeg images located in your selected image directory, so you can decide whether to compile all images or a subset by moving some images out of this directory. It is also possible to designate a subset of images to compile through ffmpeg directly using the option `-pattern_type sequence` and the string `%0Nd`, which specifies the position of the characters representing a sequential number in each filename matched by the pattern. However I haven't needed to use this function so far. You can learn more bout this [here](https://www.ffmpeg.org/ffmpeg-all.html#toc-image2-1) 
 
+The script uses the following ffmpeg settings:
+```
+ffmpeg -v error -r 18 -pattern_type glob -i '*.jpg' -c:v libx264 timelapse_$COMPDATE.mp4
+```
+What that means is that ffmpeg will run:
+* `-v error` # log level, will show all errors, including ones which can be recovered from. 
+* `-r 18` # output frame rate = 18 frames/second of video
+* `-pattern_type glob -i '*.jpg'` # using all jpg files in the current directory
+* `-c:v libx254` # using the libx264 video codec
 
+## Additional Scripts
+
+I wrote a script to automate the process of updating and upgrading the the Pi's OS, applications and firmware. 
+
+You can download it and make it executable using these commands:
+```
+sudo wget -O /home/pi/update.sh https://raw.githubusercontent.com/xthursdayx/GardenCam/raw/master/update.sh
+
+sudo chmod +x /home/pi/update.sh
+```
+
+I am also working on a script to automatically back up my Pi GardenCam once a week, using @aweijnitz's Raspberry Pi Backup script as a foundation. 
+
+The work-in-progress can be downloaded using:
+```
+sudo wget -O /home/pi/backup.sh https://raw.githubusercontent.com/xthursdayx/GardenCam/raw/master/backup.sh
+
+sudo chmod +x /home/pi/backup.sh
+```
 
 ## Author
 
-* **[xthursdayx]**(https://github.com/xthursdayx)
+* [xthursdayx](https://github.com/xthursdayx)
 
 ## License
 
@@ -329,12 +321,17 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 * Jeff Geerling's Blog was invaluable in setting up this camera
 	- <https://www.jeffgeerling.com/blog/2017/raspberry-pi-zero-w-headless-time-lapse-camera>
 	- <https://www.jeffgeerling.com/blogs/jeff-geerling/controlling-pwr-act-leds-raspberry-pi>
-* These blogs were useful in figuring out how to set up auto-reboot and mail notifications:
+* These blogs were useful in figuring out how to set up Watchdog, auto-reboot and mail notifications:
 	- <https://ictoblog.nl/raspberry-pi/raspberry-pi-auto-reset-with-mail-notification>
 	- <https://ictoblog.nl/raspberry-pi/daily-sma-bluetooth-report-via-e-mail>
 	- <http://blog.ricardoarturocabral.com/2013/01/auto-reboot-hung-raspberry-pi-using-on.html>
 	- <https://pi.gadgetoid.com/article/who-watches-the-watcher>
 	- <https://www.domoticz.com/wiki/Setting_up_the_raspberry_pi_watchdog>
+	- <https://quantixed.org/2018/12/04/experiment-zero-using-a-raspberry-pi-zero-camera/>
+* These posts helped me attach my server as a local drive:
+	- <https://www.codedonut.com/raspberry-pi/mount-network-share-raspberry-pi/>
+	- <https://thepihut.com/blogs/raspberry-pi-tutorials/26871940-connecting-to-network-storage-at-boot>
 * Backup script credits go to: @aweijnitz 's [pi_backup project](https://github.com/aweijnitz/pi_backup) which draws from:
 	- <http://raspberrypi.stackexchange.com/questions/5427/can-a-raspberry-pi-be-used-to-create-a-backup-of-itself> and
 	- <http://www.raspberrypi.org/phpBB3/viewtopic.php?p=136912>
+* And of course all of the documentation at <https://www.raspberrypi.org>.
